@@ -42,7 +42,6 @@ def source_posterior(
     :param continuation: 'raise' or the explicitly assumed 'unit_photon' tail.
     :return: Dictionary with source-only posterior node probability, conditional
         log likelihood (dust, node), marginalized log likelihood, and n_source.
-        A fresh calculation is made; saved posterior weights are never inputs.
     """
     eta = np.asarray(coordinates, float)
     logw = np.asarray(log_prior_weight, float)

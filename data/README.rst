@@ -1,21 +1,21 @@
-Roman selected-response calibration
-===================================
+Bundled simulation inputs
+=========================
 
-``roman_response.npz`` is a compact copy of the TRAIN20 selected-response
-calibration from simulated Roman Type Ia SNe processed with the SNANA/PIPPIN
-workflow. It contains point selected means, selected variances, delivery
-probabilities, all 2000 joint calibration draws, their prior probabilities,
-the fixed control origin, and scientific metadata. It contains no individual
-parent records. The original numerical arrays are retained without rounding.
+Roman response
+--------------
 
-The generation design used 600 matched training parents at each of six true
-redshifts: 0.55, 0.6, 0.85, 1.2, 1.7 and 2.475. Each parent has a zero control
-and photon-shift outcomes on a full 20-knot grid. All attempted parents,
-including failed delivery, enter the delivery denominator. The simulated
-calibration population is true Ia; truth-type labels do not enter observable
-standardization or light-curve quality selection.
+``roman_response.npz`` contains the TRAIN20 calibration from simulated Roman
+Type Ia SNe processed with SNANA/PIPPIN: selected means and variances, delivery
+probabilities, 2,000 joint calibration draws and their probabilities, the fixed
+control origin, and metadata.
 
-The standardized observable is
+The design uses 600 matched training parents at each true redshift
+0.55, 0.6, 0.85, 1.2, 1.7 and 2.475. Each parent has a zero control and outcomes
+on a 20-knot photon-shift grid. All attempted parents, including failed
+delivery, enter the delivery denominator. The calibration population is true
+Ia; standardization and quality selection use observable quantities.
+
+The fixed raw Tripp observable is
 
 .. code-block:: text
 
@@ -25,113 +25,101 @@ The standardized observable is
    Y = R - C0
    C0 = -19.35848721346268 mag
 
-This is a fixed raw Tripp observable, with no per-batch BBC residual or bias
-correction. The reference distance uses a flat model with Om=0.315, H0=70
-km/s/Mpc, w0=-0.8 and wa=-1; the distance integral uses observed zHD and the
-luminosity prefactor uses observed zHEL. ``ilsn.supernova.fixed_raw_tripp``
-implements this observable. C0 is the equal-bin mean of selected zero-control
-raw residuals, and every draw remains in that same fixed numerical coordinate.
+The reference distance is flat with Om=0.315, H0=70 km/s/Mpc, w0=-0.8 and wa=-1.
+It uses observed zHD in the distance integral and observed zHEL in the
+luminosity prefactor. ``ilsn.supernova.fixed_raw_tripp`` implements R without
+per-batch BBC corrections. C0 is the equal-bin mean of selected zero-control
+residuals and stays fixed across all calibration draws.
 
-The selected Gaussian density approximates each conditional residual
-distribution using its own selected mean and variance. Absolute mean,
-variance and delivery interpolate linearly between photon-shift knots.
-Broad lookup edges do not establish continuous redshift support: evaluation
-is restricted to the six declared true-redshift centers within 1e-6. Photon
-shifts beyond the grid raise an error by default. ``unit_photon`` continuation
-is an explicit alternative used in the Roman population calculation: the
-edge mean is extended with unit photon slope and its variance/delivery are
-held fixed. This tail law is an assumption and does not extend redshift support.
+Response assumptions
+~~~~~~~~~~~~~~~~~~~~
 
-The 2000 response draws use positive exponential matched-parent multipliers,
-normalized within the declared generation strata. A parent has one multiplier
-shared across its zero control, all injected nodes and failed outcomes. The
-same weights determine mean, variance and delivery together. Variance uses
-the fixed point effective-count correction. These draws approximate finite
-simulated-training sampling uncertainty conditional on the supplied simulator,
-selection and finite parent allocation. They do not measure real survey
-zero-point, standardization-coefficient or population-model systematics, or
-establish unconditional simulator/population portability.
+* The selected density is Gaussian with the calibrated mean and variance.
+  Mean, variance and delivery interpolate linearly in photon shift. Evaluation
+  is restricted to the six true-redshift centers, with tolerance 1e-6.
+* Out-of-grid photon shifts raise an error by default. The population example
+  uses ``unit_photon`` continuation: mean extends with unit photon slope;
+  variance and delivery remain at their edge values. Redshift support is fixed.
+* Calibration draws use positive exponential parent multipliers normalized
+  within generation strata. Each multiplier is shared across the parent's
+  control, injections and failed outcomes, keeping mean, variance and delivery
+  paired. Variance uses the fixed-point effective-count correction.
+* The draws describe finite-training uncertainty under the simulated population
+  and selection. Survey zero points, standardization coefficients and simulator
+  mismatch require separate constraints or priors.
+* TRAIN20 refines the original 12-knot grid using the same training parents,
+  after the earlier validation was examined. Independent validation of the
+  refined grid and its Gaussian tails remains outstanding.
 
-The 20-knot table is a training-grid refinement made after the original
-12-knot validation was opened. It uses already generated training parents
-under the same observable and selection law. The refinement has no new
-independent validation or coverage claim. Matching selected moments also does
-not establish Gaussian tail or coverage accuracy.
+Run the individual-SN calculation::
 
-Run the individual-SN illustration from the public repository root:
+    PYTHONPATH=. python examples/roman_magnification.py
 
-.. code-block:: bash
+The included training event has residual -0.3513132671710686 mag at true
+redshift 1.2 and injected photon shift -0.2 mag, corresponding to
+``mu = 10**0.08 = 1.2022644``. Its likelihood averages over all response draws
+and peaks near 1.3514. The log-likelihood-drop-0.5 interval is approximately
+[1.1668, 1.5679], with fractional half-width 0.1484. This width describes that
+noisy event under the response model. The calculation fixes attenuation,
+extra microlensing and post-delivery offsets to zero and applies no lens-mass
+prior. Delivery cancels at fixed magnification.
 
-   PYTHONPATH=. python examples/roman_magnification.py
-
-The included residual, -0.3513132671710686 mag at true redshift 1.2, is one
-training event injected with photon shift -0.2 mag, or magnification
-``10**0.08 = 1.2022644``. Its conditional brightness likelihood averages the
-Gaussian selected density over all response draws. The likelihood peak is
-approximately 1.3514; the interval with log-likelihood drop at most 0.5 is
-approximately [1.1668, 1.5679], with fractional half-width 0.1484. Delivery
-cancels at each fixed magnification. Attenuation, extra microlensing and
-post-delivery offsets are fixed to zero. No lens-mass prior or magnification
-Jacobian is applied. This single training example is neither a coverage test
-nor a universal independent SN error or a survey-mean precision forecast.
-
-Reduced Roman population input
-==============================
+Population transfer input
+-------------------------
 
 ``roman_transfer.npz`` contains two simulated SN foregrounds and ten independent
-strong-lens targets from an existing reduced Roman workflow calculation. It
-includes both residual realizations, physical source/target banks, paired LOS
-quadrature, mock imaging observations, mass weights/scores, and a 64-node joint
-source/calibration importance rule. It contains no fitted posterior weights.
-The public example recalculates all source evidence before target readout::
+strong-lens targets. It includes two residual realizations, physical lens
+predictions, paired line-of-sight samples, mock imaging, mass weights/scores,
+and a 64-node joint population/calibration importance rule. The example
+recomputes source likelihoods and target covariance from these inputs::
 
     PYTHONPATH=. python examples/roman_transfer.py
     PYTHONPATH=. python examples/roman_transfer.py --realization 1 --nodes 2048
     PYTHONPATH=. python examples/roman_transfer.py --contrast-scale 2
 
-The physical input is ``MassGrid.primary(eta_nodes=(-0.2, 0, 0.2))``: 1,620
-states with q=5 and no compensated redistribution, evaluated using the primary
-eight-score definition. Source/target fields were rebuilt through the public
-``build_lens_bank`` functions. The 64 joint nodes retain the existing importance
-correction; they are a coarse integration rule, not evidence of convergence.
-An increased receiving node count refines only the receiving integration.
-The runner reports both a Gaussian-prior baseline and a baseline obtained
-from the same finite source rule before applying SN data. Only the latter's
-width ratio isolates the SN update on that finite rule. The no-SN difference
-between these baselines is substantial in this 64-node input; it diagnoses
-coarse integration and must not be counted as ilSN information. Refining
-the receiving rule alone does not repair the source-prior representation.
-The response has 2,000 possible joint draws; this importance rule samples them
-through its saved response indices and correct joint weights.
+The mass grid is ``MassGrid.primary(eta_nodes=(-0.2, 0, 0.2))``: 1,620 states
+with q=5, zero compensated redistribution and the primary eight-score
+definition. Predictions are built with ``build_lens_bank``.
 
-The source prior is zero-mean Gaussian with covariance diag(1,1,1,1,1,1,1,0.25).
-The independent target contrast is zero-mean Gaussian with covariance
-diag(0.35^2,0.35^2,0.35^2,0.35^2,0.35^2,0.35^2,0.35^2,0.5^2).
-Shared dust amplitudes [0,0.5,1] have weights [0.25,0.5,0.25]; their template
-is 0.01*(2*Re/radius)^2 mag. External convergence and shear retain eight paired
-empirical rows and four angles. Additional post-delivery microlensing variance
-is 0.04*kappa_star. Targets use caustic-area weighting with the 150--350 km/s
-SIS velocity proxy and compressed simulated theta_E/xi_E observations.
+Physical and population assumptions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Arrays named ``source_*`` contain the source residuals, fixed design covariates,
-physical predictions, base measure, scores, eta nodes, response indices, joint
-log prior/proposal weights and node-by-source offsets. ``target_*`` contains
-the receiving design, its own physical predictions and base measure/scores.
-``los_*`` contains the common paired environment rule; ``observed_*`` and
-``sigma_*`` are fixed inner observations and errors. ``source_prior_covariance``,
-``contrast_covariance`` and the dust arrays make the population priors explicit.
-The full array usage is in ``examples/roman_transfer.py``.
+* The source prior is zero-mean Gaussian with covariance
+  diag(1,1,1,1,1,1,1,0.25).
+* The independent target contrast is zero-mean Gaussian with covariance
+  diag(0.35^2,0.35^2,0.35^2,0.35^2,0.35^2,0.35^2,0.35^2,0.5^2), shared across
+  all targets.
+* Shared dust amplitudes [0,0.5,1] have weights [0.25,0.5,0.25] and template
+  0.01*(2*Re/radius)^2 mag. External convergence and shear retain eight paired
+  simulated rows and four orientations. Additional post-delivery microlensing
+  variance is 0.04*kappa_star mag squared.
+* Targets use caustic-area weighting, a 150--350 km/s SIS velocity proxy,
+  and compressed simulated theta_E/xi_E observations.
 
-This input serves as a compact executable scientific calculation. Two sources
-do not establish the full Roman sample's precision. A realized posterior can
-widen, and a narrow interval alone says nothing about bias or coverage. The
-complete survey, extended radial families, and quadrature convergence need
-their own calculations with correspondingly larger inputs.
+The 64-node rule is coarse. The example reports a Gaussian-prior reference
+and a before-SN baseline using the same finite source rule as the posterior.
+Use the matched baseline to isolate the SN update. The substantial difference
+between the two baselines reflects the coarse prior representation, not SN
+information.
+Source and receiving integration need separate refinement; ``--nodes``
+changes only the receiving rule. Response indices sample the 2,000 joint
+calibration draws with the saved importance weights. This two-source input
+is intended for exploring the calculation and its assumptions.
 
-Input credits
-=============
+Array groups
+~~~~~~~~~~~~
 
-The Roman response was generated for this study with SNANA/PIPPIN. The
-foreground galaxy design derives from SLSim simulations, and the paired
-line-of-sight convergence/shear samples derive from Tang et al. (2025).
-Source links and attribution are given in `CITATION.rst <../CITATION.rst>`_.
+``source_*``
+    Residuals, design covariates, physical predictions, mass weights/scores,
+    population nodes, response indices, joint prior/proposal weights and offsets.
+``target_*``
+    Target design, predictions and mass weights/scores.
+``los_*``
+    Paired environment samples and their integration weights.
+``observed_*`` and ``sigma_*``
+    Fixed mock inner observations and their uncertainties.
+``source_prior_covariance``, ``contrast_covariance`` and dust arrays
+    Population and nuisance priors.
+
+See ``examples/roman_transfer.py`` for array usage and
+`CITATION.rst <../CITATION.rst>`_ for input sources.

@@ -1,9 +1,9 @@
 Using the package
 =================
 
-Run examples from the repository root with ``PYTHONPATH=.``. There is no
-package-index installation step. Dependencies are in ``requirements.txt``;
-development dependencies and the test command are described in the README.
+Run examples from the repository root with ``PYTHONPATH=.``. Install the
+dependencies in ``requirements.txt``; see the README for development setup
+and tests.
 
 Read the simulated Roman response
 ---------------------------------
@@ -23,10 +23,9 @@ Read the simulated Roman response
         calibration=response,
     )
 
-This is the saved illustrative training event: its injected magnification
-is about 1.20, while its noisy brightness likelihood peaks near 1.35. The
-response includes the fitting scatter; a single event need not peak at its
-injection. See ``data/README.rst`` for the response domain and limitations.
+The saved training event has injected magnification about 1.20 and a noisy
+brightness likelihood peaking near 1.35. The response includes fitting scatter.
+See ``data/README.rst`` for its calibration domain.
 
 Build the standardized observable
 ---------------------------------
@@ -40,29 +39,24 @@ Build the standardized observable
     selected = {key: value[keep] for key, value in table.items()}
     y = fixed_raw_tripp(selected) - response.control_scalar
 
-Use ``standardized_residual`` when supplying a different explicit reference
-distance or coefficients, and rebuild the response for that observable.
-An existing BBC-corrected ``MURES`` is not interchangeable with this raw Tripp
-residual. Response-conditioning true redshifts and observed fitted redshifts
-in standardization have different roles. This release does not marginalize
-an uncertain redshift in the lens geometry.
+For a different reference distance or standardization coefficients, use
+``standardized_residual`` and rebuild the response for that observable.
+BBC-corrected ``MURES`` and the raw Tripp residual define different observables.
+The response conditions on true redshift; standardization uses fitted
+redshift. Lens geometry uses fixed redshifts.
 
 Calibrate a new response
 ------------------------
 
-``ResponseCalibration.from_generated`` consumes arrays for *all generated*
-parents at the photon-shift nodes, including failed/deselected outcomes.
-The delivered mask defines the selected moments and the generated rows define
-the delivery denominator. Matched parent indices retain correlations across
-photon shifts in the bootstrap. Supply the same quality/classification
-selection and observable you will use for inference. Consult the API for the
-row arguments and conditioning metadata. A selected-only table cannot measure
-the delivery probability.
+``ResponseCalibration.from_generated`` requires all generated parents at the
+photon-shift nodes, including failed/deselected outcomes. The delivered mask
+defines selected moments; generated rows supply the delivery denominator.
+Matched parent indices preserve bootstrap correlations across photon shifts.
+Use the inference observable and quality/classification selection. The API
+specifies row arguments and conditioning metadata.
 
 Construct source and target banks
 ---------------------------------
-
-The physical construction is part of the library. For example:
 
 .. code-block:: python
 
@@ -79,24 +73,20 @@ The physical construction is part of the library. For example:
     bank = build_lens_bank(design, grid, PhysicalRelations())
     population = MassPopulation(grid.base_probability, grid.scores)
 
-This grid has 1,620 states;
-``MassGrid.primary()`` uses 4,860 and ``MassGrid.roman()`` uses 72,900. The latter
-retains core scale and redistribution freedom. Inspect ``support_invalid``,
-``support_unresolved`` and the separate geometry/endpoint masks. For large
-jobs, ``state_slice`` permits building independent physical blocks. The
-default direct lens solver is intended for readable calculations and controls,
-not the historical production solver's throughput.
+This grid has 1,620 states; ``MassGrid.primary()`` uses 4,860 and
+``MassGrid.roman()`` uses 72,900, retaining core scale and redistribution
+freedom. Inspect ``support_invalid``, ``support_unresolved`` and the
+geometry/endpoint masks. Use ``state_slice`` to build independent physical
+blocks for large jobs.
 
 ``observation.paired_los`` compresses paired empirical convergence/shear pools.
 ``observation.source_sample`` turns a physical source bank into photon shifts,
 local LOS weights, a dust template and prescribed stellar microlensing variance.
-Passing ``los=None`` explicitly removes external convergence/shear; it does
-not fetch a default cosmological environment. ``td_selection`` and
-``imaging_log_likelihood`` construct the target weights and compressed inner
-observations. Both preserve the mass-state axes.
+``los=None`` sets external convergence/shear to zero. ``td_selection`` and
+``imaging_log_likelihood`` construct target weights and compressed inner
+observations while preserving the mass-state axes.
 
-The public inference works with NumPy arrays, including predictions from a
-different lens engine. The axes are:
+Inference accepts NumPy arrays, including predictions from other lens engines:
 
 ========================== ===============================================
 Input                      Shape / meaning
@@ -118,20 +108,17 @@ target log likelihood      (J, K), supplied imaging/dynamics data
 
 N is the SN count, J the target count, K the mass-state count, L the local
 nuisance count, D the population dimension, and H/C quadrature node counts.
-Source and target states share parameter coordinates, not identical physical
-galaxies. Foreground radii, source/lens redshifts, stellar sizes and mass
-proxies belong in each object's physical predictions.
+Source and target grids share parameter coordinates. Each object's predictions
+use its own foreground radius, source/lens redshifts, stellar size and mass
+proxy.
 
-At each mass state, local component weights sum to at most one. Set zero
-weight on invalid or multi-image source components. Selection is applied
-inside the likelihood from the calibrated delivery response; do not include
-it a second time in those pre-delivery component weights. A vector of local
-weights broadcasts over L. Per-source weights require shape ``(N,1,1)``.
+At each mass state, pre-delivery local component weights sum to at most one,
+with zero weight for invalid or multi-image sources. The likelihood applies
+calibrated delivery selection once. A vector of local weights broadcasts
+over L; per-source weights require shape ``(N,1,1)``.
 
 Conditional transfer
 --------------------
-
-The central inference sequence is:
 
 .. code-block:: python
 
@@ -162,15 +149,14 @@ The central inference sequence is:
     print(result.prior.catalogue_mean_sd, result.posterior.catalogue_mean_sd)
     covariance = result.posterior.covariance
 
-The array names in this snippet are inputs, not bundled global variables.
-``examples/quickstart.py`` constructs every one of these ingredients from
-physical lenses and a small synthetic dataset.
+Supply the named arrays as inputs. ``examples/quickstart.py`` constructs them
+from physical lenses and a small synthetic dataset.
 
 For correlated common/cell calibration or dust priors, construct
 ``SharedNuisance`` directly: each row is a joint realization. An offset array
 of shape ``(Q,N)`` assigns the correlated residual shift to each source.
-The independent Cartesian factory above is only one choice. Set response
-index ``-1`` for an explicitly fixed point calibration.
+The factory above uses an independent Cartesian prior. Response index ``-1``
+selects a fixed point calibration.
 
 For a large joint population/calibration rule, use
 ``SourceLikelihood.aligned_log_likelihood(population, eta, nuisance_index)``.
@@ -178,14 +164,14 @@ Each eta row is paired with one shared nuisance row, avoiding the full
 eta-by-calibration Cartesian product. Pass those eta rows, the returned
 conditional likelihoods, and their *joint* prior quadrature weights to
 ``population_transfer``. For importance samples, those weights include the
-joint prior divided by the proposal density. Do not multiply the response
-prior again. Retain the nuisance indices alongside the saved node arrays.
+joint prior divided by the proposal density, counting the response prior
+once. Save nuisance indices alongside the node arrays.
 
 Streaming a joint calculation
 -----------------------------
 
-``examples/roman_transfer.py`` is a complete saved-array run of the actual
-eight-coordinate model. Its central source step is:
+``examples/roman_transfer.py`` runs the eight-coordinate model from saved
+arrays. Its source step is:
 
 .. code-block:: python
 
@@ -203,9 +189,8 @@ sample contains only its source block; offsets have shape ``(H,N_block)`` or
 accumulates all conditional log likelihoods before integrating the independent
 shared dust prior. ``log_prior_weight`` is the joint prior/proposal correction
 of the supplied rule, including the paired response and offset priors once.
-A plain Gaussian eta rule combined with independently prior-sampled response
-draws would instead have equal prior weights. This function does not build or
-claim convergence of an adaptive proposal.
+A Gaussian eta rule with independently prior-sampled response draws has equal
+prior weights. Construct the proposal and check its convergence separately.
 
 Read out an independent receiving mass grid without constructing an eta-by-delta
 Cartesian product:
@@ -225,39 +210,25 @@ Cartesian product:
     before, _ = target_readout(target_population, targets, before_nodes, before_weights)
     after, _ = target_readout(target_population, targets, after_nodes, after_weights)
 
-The Gaussian sum for ``before_nodes`` assumes independent zero-mean Gaussian
-source and contrast priors. Every receiving node is common to all target
-lenses; all their imaging evidence updates its weight. ``target_population``
-may have a different number of states from ``source_population`` but must use
-the same frozen score coordinates. Check both receiving node count and seed,
-as well as the independently supplied source rule, before quoting precision.
-The runnable example also calculates the before-SN distribution from the same
-finite source rule with its prior/proposal weights. With an uninformative
-source likelihood, that matched comparison is unchanged. Its difference from
-the Gaussian-reference baseline diagnoses how poorly the coarse source rule
-represents the prior; it is not a bound on integration error. The Gaussian
-reference width ratio must not be interpreted as SN-only improvement when
-this difference is appreciable.
+The Gaussian sum for ``before_nodes`` assumes independent, zero-mean Gaussian
+source and contrast priors. Every receiving node is shared by all targets,
+whose imaging evidence updates its weight. Source and target state counts
+may differ, but their frozen score coordinates must agree.
 
-Existing research calculations
-------------------------------
+Check receiving node count, seed and the supplied source rule. For SN-only
+improvement, use the example's matched before-SN distribution from that same
+finite source rule and prior/proposal weights: an uninformative source
+likelihood leaves this comparison unchanged. A difference from the Gaussian
+reference baseline diagnoses coarse prior representation, without bounding
+integration error. If appreciable, it also prevents interpreting the Gaussian
+reference width ratio as SN-only improvement.
 
-The response loader accepts existing Roman moment archives and automatically
-reads a neighboring ``.metadata.json`` when present. Retain that metadata for
-fixed-redshift support. Physical banks can be supplied as the arrays above;
-NPZ/CSV storage, scheduler settings and paper-specific filenames are not
-coupled to the inference classes. The package does not require the historical
-research repository, its raw simulation directories or its manuscript files.
+Response archives and reproducibility
+-------------------------------------
 
-The public examples reproduce the scientific operations, not every large
-paper run. For paper-scale work, preserve the actual mass grid and its base
-measure, all prescribed population and contrast scores, selection, calibration
-draws and target likelihoods. Changing them changes the inference.
-
-The bundled reduced calculation was compared with the original research
-implementation after independently rebuilding its physical banks and
-recomputing source likelihoods. Source probabilities and the full receiving
-covariance agree to numerical precision. The expanded 72,900-state base measure
-and material admission were also compared, with a smaller forward-model probe.
-These are implementation checks; the full 1,144-source production forecast
-has not been rerun by this source distribution.
+The loader accepts Roman moment archives and reads a neighboring
+``.metadata.json`` when present. Retain it to specify fixed-redshift support.
+Physical banks use the array conventions above, independently of storage
+format or scheduler. Preserve the mass grid and base measure, population
+and contrast scores, selection, calibration draws and target likelihoods
+when reproducing a calculation.

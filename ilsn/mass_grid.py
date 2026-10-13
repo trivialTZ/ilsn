@@ -86,7 +86,7 @@ class LensDesign:
 
 @dataclass(frozen=True)
 class PhysicalRelations:
-    """Declared simulation relations, with no empirical calibration claim.
+    """Prescribed stellar--halo mass and concentration relations.
 
     Halo masses are dark M200 relative to critical density at the lens.
     Residual scatters multiply dimensionless grid residuals; their discrete

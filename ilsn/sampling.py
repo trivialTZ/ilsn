@@ -33,7 +33,6 @@ def _normal_rule(covariance, n, seed, extra_dimension=0):
 def gaussian_nodes(mean, covariance, n=128, seed=0):
     """Scrambled Sobol nodes and equal weights for a multivariate Gaussian.
 
-    This is finite numerical quadrature, not a convergence certificate.
     Increase n and repeat with independent seeds when reporting precision.
     Covariance may be singular, including a fixed zero contrast.
     """

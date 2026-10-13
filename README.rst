@@ -3,135 +3,88 @@ ilSN
 
 Absolute supernova magnification and conditional mass priors for strong lenses.
 
-``ilSN`` follows three steps: standardized SN Ia brightness measures
-magnification at the SN position; physical mass models transfer that
-information to the Einstein radius; a conditional population model shares
-information with independent strong lenses that have no supernova of their own.
+``ilSN`` models how intermediate-lensed Type Ia supernovae inform strong-lens
+mass distributions in three steps:
 
-The code supports simulation studies. Its forecasts depend on the supplied
-SN response, radial mass family, selection functions and source--target
-population relation. An uncertainty in magnification is not automatically
-an uncertainty in the mass sheet or in H0.
+1. Standardized SN brightness measures magnification at the SN position.
+2. Physical mass models and inner observations transfer that information to
+   the Einstein radius.
+3. A conditional population model informs independent strong lenses through
+   shared population parameters and an explicit source--target difference.
+
+The examples use simulations. Transfer gains depend on the SN response,
+allowed mass profiles, selection and population priors; see the
+`scientific model <docs/science.rst>`_ for the equations and assumptions.
 
 Getting started
 ---------------
 
-Use Python 3.10 or newer. Run directly from this source directory; installing
-the package itself is unnecessary::
+Use Python 3.10 or newer and run from this source directory::
 
     python -m venv .venv
     source .venv/bin/activate
     python -m pip install -r requirements.txt
     PYTHONPATH=. python examples/quickstart.py
-    PYTHONPATH=. python examples/roman_transfer.py
 
-The example simulates SN residuals, evaluates radial transfer with mock
-imaging, and compares independent target lenses before and after sharing
-the source population. It writes a three-panel figure and numerical results
-to ``outputs/quickstart/``. The small simulation uses prescribed priors and
-is not the paper's full Roman forecast.
+The quickstart simulates SN residuals, combines them with mock inner imaging,
+and calculates the covariance of independent target lenses. It saves a
+three-panel figure and numerical results to ``outputs/quickstart/``.
 
-``roman_transfer.py`` instead reads a bundled reduced input from the actual
-Roman simulation calculation. It recomputes the selected-source likelihood,
-shared-calibration population posterior and independent target covariance.
-The input contains two sources, ten targets, 1,620 mass states and the actual
-eight population coordinates. No saved posterior is used. This makes the
-research calculation inspectable without downloading the large production
-banks. It is a numerical workflow example, not a Roman precision estimate.
-
-A physical lens can also be constructed directly:
-
-.. code-block:: python
-
-    from ilsn.lens_model import GalaxyProfile, CompositeProfile
-
-    galaxy = GalaxyProfile(
-        z_l=0.3, re_arcsec=0.8, stellar_mass_msun=2e11,
-        halo_mass_msun=1e13, concentration=7.0,
-    )
-    profile = CompositeProfile.from_reference(
-        galaxy, reference_mass_msun=2e11, reference_re_kpc=galaxy.re_kpc,
-        eta=0.03, q=5.0, compensation=0.0,
-    )
-    lens = profile.lens(z_s=1.2)
-    theta_e = lens.theta_E()          # arcsec, solved for this model
-    s_e = lens.s_E()                 # 1 - kappa(theta_e)
-    mu = lens.mu(3.0 * theta_e)      # signed macro magnification
-
-For an ilSN, check single-image geometry separately before interpreting
-``abs(mu)`` as its flux magnification. The complete example does this.
-
-Examples
---------
-
-For interactive, step-by-step calculations, start with the
+For step-by-step calculations, open the
 `notebook guide <notebooks/README.md>`_:
 
-* `Roman magnification <notebooks/01_roman_magnification.ipynb>`_: selected
-  response and a noisy SN's absolute-brightness likelihood.
-* `Radial transfer <notebooks/02_radial_transfer.ipynb>`_: physical mass freedom,
-  inner imaging, and realized versus predictive-average information.
-* `Population transfer <notebooks/03_population_transfer.ipynb>`_: fresh source
-  inference, independent receiving lenses, contrast priors and full covariance.
+* `Roman magnification <notebooks/01_roman_magnification.ipynb>`_: light-curve
+  brightening, the selected response, and a noisy SN's brightness likelihood.
+* `Radial transfer <notebooks/02_radial_transfer.ipynb>`_: mass-model freedom,
+  inner imaging, and information at the Einstein radius.
+* `Population transfer <notebooks/03_population_transfer.ipynb>`_: shared
+  calibration, independent targets, population differences and full covariance.
 
-Install the optional notebook dependencies and launch JupyterLab::
+::
 
     python -m pip install -r requirements_notebooks.txt
     python -m jupyterlab notebooks
 
-The command-line examples remain available:
+Command-line examples
+---------------------
 
-* ``examples/quickstart.py``: the complete residual → radial → population
-  calculation, with the same target imaging on both sides of the comparison.
-* ``examples/roman_magnification.py``: a conditional brightness likelihood
-  from the bundled simulated Roman calibration, including its joint draws.
-* ``examples/roman_transfer.py``: fresh population inference from saved Roman
-  simulation inputs, with paired environments, common calibration, target
-  imaging and an explicit source--target contrast prior.
-* ``examples/radial_models.py``: different physical radial profiles that share
-  an outer magnification and retain different inner structure.
+Run each with ``PYTHONPATH=. python examples/<name>.py``. All inputs are bundled;
+``--output-dir`` selects the output directory.
 
-Run each using ``PYTHONPATH=. python examples/<name>.py``. The figures use
-serif text and a common blue/orange palette. ``--output-dir`` chooses where
-results are written. No download or cluster access is needed.
+* ``quickstart.py``: the complete residual → radial → population calculation.
+* ``roman_magnification.py``: a brightness likelihood using the simulated
+  Roman response and its joint calibration draws.
+* ``roman_transfer.py``: source inference and target covariance from a reduced
+  Roman input with two SN foregrounds, ten targets and 1,620 mass states.
+  Its coarse integration rule illustrates the workflow; the notebook compares
+  matched baselines to separate the SN update from integration differences.
+* ``radial_models.py``: profiles with the same outer magnification and different
+  inner structure.
+
+See `input data <data/README.rst>`_ for the simulation setup and numerical rule.
 
 Scientific interface
 --------------------
 
-``supernova``
-    Explicit-reference standardization, magnification shifts, and SNANA FITRES
-    input. The Roman raw-Tripp observable and its selection are included.
-``response``
-    Selected mean, variance and delivery probability, their shared calibration
-    draws, paired-parent calibration from simulations, and NPZ input/output.
-``lens_model`` and ``geometry``
-    Sersic stars with a mass-to-light gradient, gNFW halos, signed finite cores,
-    compensated redistribution, circular lens geometry, and MST identities.
-``mass_grid`` and ``lens_bank``
-    Physical covariates, stellar/halo relations, the actual weighted Roman
-    mass grids and frozen eight-score mapping, all-radius material admission,
-    and source/target predictions. Source and target grids can be refined
-    separately without redefining population parameters.
-``observation``
-    Paired external convergence/shear, photon magnification and attenuation,
-    prescribed microlensing, TD-like selection and compressed inner imaging.
-``likelihood``
-    Source selection, local nuisance components, common response/dust/offsets,
-    and fixed-size selected-sample simulation.
-``inference`` and ``sampling``
-    A joint source/calibration rule evaluated in source blocks, followed by
-    paired receiving nodes. Shared errors are integrated after all blocks.
+``supernova`` and ``response``
+    SNANA FITRES input, standardized residuals, selected response moments,
+    delivery probabilities and shared calibration draws.
+``lens_model``, ``geometry``, ``mass_grid`` and ``lens_bank``
+    Stars, dark halos, finite cores and mass redistribution; physical mass
+    grids, single-image geometry and source/target predictions.
+``observation`` and ``likelihood``
+    Paired line-of-sight environments, dust, microlensing, source selection,
+    shared errors and mock inner imaging.
 ``radial``
-    Inner mass-state posterior and predictive-average information gain,
-    with optional inner imaging or dynamics likelihoods.
-``population``
-    Shared mass-population coordinates, an explicit common target contrast,
-    target selection and imaging evidence, and the full target covariance.
+    Inner mass-state inference and predictive-average information gain.
+``population``, ``inference`` and ``sampling``
+    Shared mass-population parameters, source--target differences, source
+    inference and the full covariance of receiving lenses.
 
-Arrays are ordinary NumPy arrays. Physical banks from other lens engines can
-be supplied to ``SourceSample`` and ``TargetSample`` without inheriting a
-package-specific lens class. See ``docs/usage.rst`` for shapes and a complete
-population-transfer call, and ``docs/science.rst`` for equations and assumptions.
+Arrays are NumPy arrays. Predictions from other lens engines can be supplied
+to ``SourceSample`` and ``TargetSample``. The
+`usage guide <docs/usage.rst>`_ gives array conventions and worked API calls;
+the `API reference <docs/api.rst>`_ documents individual functions.
 
 Testing and contributions
 -------------------------
@@ -141,33 +94,28 @@ Testing and contributions
     python -m pip install -r requirements_dev.txt
     python -m pytest
 
-Tests cover physical identities, selected-density normalization, common
-calibration across source blocks, radial null directions, imaging evidence,
-material admission, population coordinates and target covariance.
-Please keep new code close to the underlying equations and describe units,
-array axes and physical assumptions in its docstrings. See ``CONTRIBUTING.rst``.
-GitHub Actions runs the tests, documentation build, examples and all three
-notebooks from fresh Python kernels on pushes and pull requests.
+GitHub Actions runs the scientific tests, documentation build, examples and
+all three notebooks. See `CONTRIBUTING.rst <CONTRIBUTING.rst>`_ for code and
+test conventions.
 
 Credit
 ------
 
-The bundled inputs are simulation products from our ilSN study:
+The bundled inputs use:
 
-* Roman SN response tables generated with
-  `SNANA <https://github.com/RickKessler/SNANA>`_ and
-  `PIPPIN <https://github.com/dessn/Pippin>`_.
-* Foreground galaxy samples generated with
-  `SLSim <https://github.com/LSST-strong-lensing/slsim>`_.
-* Paired line-of-sight convergence and shear samples from
-  `Tang et al. (2025) <https://arxiv.org/abs/2506.04201>`_, available in the
+* `SNANA <https://github.com/RickKessler/SNANA>`_ and
+  `PIPPIN <https://github.com/dessn/Pippin>`_ for Roman SN simulation and response
+  calibration.
+* `SLSim <https://github.com/LSST-strong-lensing/slsim>`_ for foreground galaxy
+  simulations.
+* `Tang et al. (2025) <https://arxiv.org/abs/2506.04201>`_ for paired line-of-sight
+  convergence and shear samples, available in the
   `LSST strong-lensing data repository
   <https://github.com/LSST-strong-lensing/data_public/tree/main/Line_of_sight_kg_distributions>`_.
 
-See ``CITATION.rst`` for input attribution and ``data/README.rst`` for the
-simulation setup.
+See `CITATION.rst <CITATION.rst>`_ for attribution.
 
 License
 -------
 
-MIT; see ``LICENSE``.
+MIT; see `LICENSE <LICENSE>`_.

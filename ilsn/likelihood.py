@@ -185,10 +185,6 @@ class SourceLikelihood:
     The full product over objects is formed before integrating psi. Both
     delivery S and selected residual density K use the same photon shift.
 
-    This implementation prioritizes explicit equations and bounded working
-    memory. Large production grids benefit from externally tabulated or
-    compressed physical predictions and parallel evaluation of eta nodes.
-
     :param continuation: Response behavior beyond measured photon-shift knots.
         ``'raise'`` requires measured support; ``'unit_photon'`` explicitly
         adopts the response calibration's unit photon continuation.
@@ -386,7 +382,7 @@ def magnification_log_likelihood(residual_mag, redshift, magnification, calibrat
     No lens-mass prior or magnification Jacobian is applied. Delivery cancels
     at each fixed physical state. Attenuation, additional microlensing and
     extra calibration offsets are fixed to zero; use SourceLikelihood for
-    their explicit integration. This width is not a universal per-SN error.
+    their explicit integration.
     """
     shift = magnification_to_shift(magnification)
     terms = []
