@@ -4,6 +4,9 @@ ilSN documentation
 Absolute SN magnification, radial mass-model inference and conditional
 population transfer to strong lenses.
 
+For executed, step-by-step examples, see the
+`notebook guide <https://github.com/trivialTZ/ilsn/blob/main/notebooks/README.md>`_.
+
 .. toctree::
    :maxdepth: 2
 

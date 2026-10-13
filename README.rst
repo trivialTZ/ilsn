@@ -64,6 +64,23 @@ For an ilSN, check single-image geometry separately before interpreting
 Examples
 --------
 
+For interactive, step-by-step calculations, start with the
+`notebook guide <notebooks/README.md>`_:
+
+* `Roman magnification <notebooks/01_roman_magnification.ipynb>`_: selected
+  response and a noisy SN's absolute-brightness likelihood.
+* `Radial transfer <notebooks/02_radial_transfer.ipynb>`_: physical mass freedom,
+  inner imaging, and realized versus predictive-average information.
+* `Population transfer <notebooks/03_population_transfer.ipynb>`_: fresh source
+  inference, independent receiving lenses, contrast priors and full covariance.
+
+Install the optional notebook dependencies and launch JupyterLab::
+
+    python -m pip install -r requirements_notebooks.txt
+    python -m jupyterlab notebooks
+
+The command-line examples remain available:
+
 * ``examples/quickstart.py``: the complete residual → radial → population
   calculation, with the same target imaging on both sides of the comparison.
 * ``examples/roman_magnification.py``: a conditional brightness likelihood
@@ -129,14 +146,28 @@ calibration across source blocks, radial null directions, imaging evidence,
 material admission, population coordinates and target covariance.
 Please keep new code close to the underlying equations and describe units,
 array axes and physical assumptions in its docstrings. See ``CONTRIBUTING.rst``.
+GitHub Actions runs the tests, documentation build, examples and all three
+notebooks from fresh Python kernels on pushes and pull requests.
 
 Credit
 ------
 
-The project is maintained by Xianzhe “TZ” Tang. It follows the focused
-scientific interfaces of `PSFr <https://github.com/sibirrer/psfr>`_ and
-`SLSim <https://github.com/LSST-strong-lensing/slsim>`_. Neither is a runtime
-dependency of this source distribution. Citation guidance and the distinction
-between software and scientific input citations are in ``CITATION.rst``.
+The bundled inputs are simulation products from our ilSN study:
 
-License: MIT; see ``LICENSE``.
+* Roman SN response tables generated with
+  `SNANA <https://github.com/RickKessler/SNANA>`_ and
+  `PIPPIN <https://github.com/dessn/Pippin>`_.
+* Foreground galaxy samples generated with
+  `SLSim <https://github.com/LSST-strong-lensing/slsim>`_.
+* Paired line-of-sight convergence and shear samples from
+  `Tang et al. (2025) <https://arxiv.org/abs/2506.04201>`_, available in the
+  `LSST strong-lensing data repository
+  <https://github.com/LSST-strong-lensing/data_public/tree/main/Line_of_sight_kg_distributions>`_.
+
+See ``CITATION.rst`` for input attribution and ``data/README.rst`` for the
+simulation setup.
+
+License
+-------
+
+MIT; see ``LICENSE``.

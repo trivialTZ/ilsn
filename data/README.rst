@@ -127,3 +127,11 @@ do not establish the full Roman sample's precision. A realized posterior can
 widen, and a narrow interval alone says nothing about bias or coverage. The
 complete survey, extended radial families, and quadrature convergence need
 their own calculations with correspondingly larger inputs.
+
+Input credits
+=============
+
+The Roman response was generated for this study with SNANA/PIPPIN. The
+foreground galaxy design derives from SLSim simulations, and the paired
+line-of-sight convergence/shear samples derive from Tang et al. (2025).
+Source links and attribution are given in `CITATION.rst <../CITATION.rst>`_.

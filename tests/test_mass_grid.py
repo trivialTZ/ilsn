@@ -38,9 +38,11 @@ def test_exact_primary_axis_measures_and_score_moments():
     # Thousands of weighted terms accumulate slightly different round-off
     # across BLAS implementations; score normalization is tested at 1e-12.
     np.testing.assert_allclose(grid.base_probability @ grid.scores, 0, atol=1e-12)
-    np.testing.assert_allclose(grid.base_probability @ (grid.scores**2), 1, atol=6e-15)
+    np.testing.assert_allclose(
+        grid.base_probability @ (grid.scores**2), 1, atol=1e-12, rtol=1e-12
+    )
     covariance = (grid.scores.T * grid.base_probability) @ grid.scores
-    np.testing.assert_allclose(covariance, np.eye(8), atol=6e-15)
+    np.testing.assert_allclose(covariance, np.eye(8), atol=1e-12, rtol=1e-12)
 
 
 def test_refined_grid_maps_into_primary_coordinates():
