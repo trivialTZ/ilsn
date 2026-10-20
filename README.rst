@@ -60,6 +60,9 @@ Run each with ``PYTHONPATH=. python examples/<name>.py``. All inputs are bundled
   matched baselines to separate the SN update from integration differences.
 * ``radial_models.py``: profiles with the same outer magnification and different
   inner structure.
+* ``radial_information.py``: how one SN's information on s_E changes with its
+  angle in Einstein radii, for three radial families, with and without inner
+  imaging.
 
 See `input data <data/README.rst>`_ for the simulation setup and numerical rule.
 
