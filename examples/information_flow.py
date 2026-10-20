@@ -327,7 +327,9 @@ def target_sensitivity(
 
     With dispersion_error, each target also has its own aperture dispersion,
     observed at the fiducial state with that fractional error plus the
-    per-galaxy anisotropy scatter.
+    per-galaxy anisotropy scatter. Its calibration offset is the one the
+    source anchors share, so E[s_E] also responds to it:
+    offset_gradient = Cov_j(s_E, d ln L_j / d offset).
     """
     logw = population.log_probabilities(eta0)[0]
     rows = []
@@ -345,6 +347,7 @@ def target_sensitivity(
         logl = imaging_log_likelihood(
             theta, xi, [ot], [ox], [theta_error * ot], [xi_error]
         )
+        offset_score = np.zeros(theta.shape[1])
         if dispersion_error is not None:
             ln_sigma = bank["ln_dispersion"]
             valid = valid & np.isfinite(ln_sigma)
@@ -354,6 +357,7 @@ def target_sensitivity(
             )
             residual = np.nan_to_num(ln_sigma) - ln_sigma[0, fiducial]
             logl = logl - 0.5 * (residual / width) ** 2 - np.log(width)
+            offset_score = -(residual / width**2)[0]
         sample = TargetSample(bank["s_E"], selection, logl, valid)
         with np.errstate(divide="ignore"):
             joint = logw + np.log(sample.selection[0]) + sample.log_likelihood[0]
@@ -371,6 +375,7 @@ def target_sensitivity(
                 mean=float(mean),
                 state_sd=float(np.sqrt(post @ (s - mean) ** 2)),
                 gradient=(post * (s - mean)) @ centered,
+                offset_gradient=float(post @ ((s - mean) * offset_score)),
                 sample=sample,
             )
         )
@@ -474,7 +479,8 @@ def shared_sd(g, fisher, prior_precision, contrast_sd=0.0):
     """Linearized shared SD of the catalogue-mean endpoint."""
     covariance = np.linalg.inv(prior_precision + fisher)
     ge = np.concatenate((g, np.zeros(len(covariance) - len(g))))
-    return float(np.sqrt(ge @ covariance @ ge + (contrast_sd * np.linalg.norm(g)) ** 2))
+    contrast = contrast_sd * np.linalg.norm(ge[: len(SCORE_NAMES)])
+    return float(np.sqrt(ge @ covariance @ ge + contrast**2))
 
 
 def analyse(
@@ -509,8 +515,13 @@ def analyse(
     precision = np.diag(
         np.concatenate((p0**-2, [sn_zero_point**-2, anchor_offset**-2]))
     )
-    contribution = (g * p0) ** 2
-    budget = dict(zip(SCORE_NAMES, contribution / contribution.sum()))
+    # Targets with their own dispersion also respond to the shared offset.
+    g_offset = float(np.mean([t["offset_gradient"] for t in targets]))
+    g_full = np.concatenate((g, [0.0, g_offset]))
+    contribution = np.append((g * p0) ** 2, (g_offset * anchor_offset) ** 2)
+    budget = dict(
+        zip(SCORE_NAMES + ("dispersion_offset",), contribution / contribution.sum())
+    )
     prior_shared = float(np.sqrt(contribution.sum()))
     individual = float(np.sqrt(np.mean([t["state_sd"] ** 2 for t in targets])))
 
@@ -603,9 +614,9 @@ def analyse(
                             data=kind,
                             anchor_error=err,
                             n_sources=n,
-                            shared_sd=shared_sd(g, n * Fm, precision),
+                            shared_sd=shared_sd(g_full, n * Fm, precision),
                             shared_sd_with_contrast=shared_sd(
-                                g, n * Fm, precision, contrast_sd
+                                g_full, n * Fm, precision, contrast_sd
                             ),
                             eta_core_mean_sd=float(
                                 np.sqrt(np.linalg.inv(precision + n * Fm)[5, 5])
@@ -622,11 +633,12 @@ def analyse(
             for t in targets
         ],
         gradient=dict(zip(SCORE_NAMES, g.tolist())),
+        offset_gradient=g_offset,
         budget=budget,
         prior_shared_sd=prior_shared,
         prior_shared_sd_nonlinear=prior_spread(population, targets, p0),
         prior_shared_sd_with_contrast=shared_sd(
-            g, np.zeros_like(precision), precision, contrast_sd
+            g_full, np.zeros_like(precision), precision, contrast_sd
         ),
         anchor_offset_sd=float(anchor_offset),
         catalogue_mean_s_E=float(np.mean([t["mean"] for t in targets])),
@@ -787,6 +799,10 @@ def main():
             f"  {name:28s} g={result['gradient'][name]:+.4f} "
             f"share={result['budget'][name]:.3f}"
         )
+    print(
+        f"  {'dispersion_offset':28s} g={result['offset_gradient']:+.4f} "
+        f"share={result['budget']['dispersion_offset']:.3f}"
+    )
     for s in result["sources"]:
         print(
             f"  logM={s['log_design_mass']:g} R={s['radius_arcsec']:g}\": admitted {s['admitted_fraction']:.2f}, "
