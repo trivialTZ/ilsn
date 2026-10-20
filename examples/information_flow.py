@@ -89,7 +89,13 @@ from scipy.special import logsumexp
 from ilsn.dynamics import aperture_dispersion
 from ilsn.lens_bank import build_lens_bank
 from ilsn.lens_model import CompositeProfile, FiniteCore, GalaxyProfile
-from ilsn.mass_grid import SCORE_NAMES, LensDesign, MassGrid, physical_state_parameters
+from ilsn.mass_grid import (
+    SCORE_NAMES,
+    LensDesign,
+    MassGrid,
+    PhysicalRelations,
+    physical_state_parameters,
+)
 from ilsn.observation import imaging_log_likelihood, td_selection
 from ilsn.population import MassPopulation, TargetSample
 from ilsn.sampling import gaussian_nodes
@@ -144,9 +150,9 @@ def core_grid(grid_name, q, normalization):
     return MassGrid.primary(**GRIDS[grid_name], q_nodes=(q,), reference_q=reference_q)
 
 
-def _state_profiles(design, grid):
+def _state_profiles(design, grid, relations=PhysicalRelations()):
     """Stars, halo and cores of every state of a one-object design."""
-    p = physical_state_parameters(design, grid)
+    p = physical_state_parameters(design, grid, relations)
     for k in range(len(grid)):
         base = GalaxyProfile(
             design.z_lens[0],
@@ -167,16 +173,16 @@ def _state_profiles(design, grid):
         yield CompositeProfile(base, cores)
 
 
-def wolf_mass(design, grid):
+def wolf_mass(design, grid, relations=PhysicalRelations()):
     """ln M_3D(<4/3 Re) in Msun for every state of a one-object design."""
     out = np.full(len(grid), np.nan)
-    for k, profile in enumerate(_state_profiles(design, grid)):
+    for k, profile in enumerate(_state_profiles(design, grid, relations)):
         mass = float(profile.enclosed_mass_3d_msun(4 / 3 * profile.base.re_kpc))
         out[k] = np.log(mass) if mass > 0 else np.nan
     return out
 
 
-def dispersion_anchor(design, grid, aperture_re):
+def dispersion_anchor(design, grid, aperture_re, relations=PhysicalRelations()):
     """ln sigma_ap (km/s) at the mean anisotropy and d ln sigma_ap / d beta.
 
     The aperture radius is aperture_re times the half-light radius.
@@ -184,7 +190,7 @@ def dispersion_anchor(design, grid, aperture_re):
     scatter = ANISOTROPY["scatter"]
     beta = ANISOTROPY["mean"] + scatter * np.array([-1.0, 0.0, 1.0])
     value, slope = (np.full(len(grid), np.nan) for _ in range(2))
-    for k, profile in enumerate(_state_profiles(design, grid)):
+    for k, profile in enumerate(_state_profiles(design, grid, relations)):
         aperture = aperture_re * profile.base.re_kpc
         ln_sigma = np.log(aperture_dispersion(profile, aperture, beta))
         if np.all(np.isfinite(ln_sigma)):
@@ -200,24 +206,27 @@ def source_size(log_mass):
 
 
 def _bank_job(job):
-    grid_name, q, normalization, kind, design_kwargs, anchor, aperture_re, target_re = (
-        job
-    )
+    grid_name, q, normalization, kind, design_kwargs, options = job
     grid = core_grid(grid_name, q, normalization)
     design = LensDesign(**design_kwargs)
+    relations = options["relations"]
     if kind == "target":
-        bank = build_lens_bank(design, grid, source=False)
-        if target_re is not None:
-            value, slope = dispersion_anchor(design, grid, target_re)
+        bank = build_lens_bank(design, grid, relations, source=False)
+        if options["target_aperture_re"] is not None:
+            value, slope = dispersion_anchor(
+                design, grid, options["target_aperture_re"], relations
+            )
             bank.update(ln_dispersion=value[None, :], dispersion_slope=slope[None, :])
         return bank
     if kind == "anchor":
-        if anchor == "wolf":
-            value, slope = wolf_mass(design, grid), np.zeros(len(grid))
+        if options["anchor"] == "wolf":
+            value, slope = wolf_mass(design, grid, relations), np.zeros(len(grid))
         else:
-            value, slope = dispersion_anchor(design, grid, aperture_re)
+            value, slope = dispersion_anchor(
+                design, grid, options["aperture_re"], relations
+            )
         return dict(ln_anchor=value[None, :], anchor_slope=slope[None, :])
-    return build_lens_bank(design, grid, target=False)
+    return build_lens_bank(design, grid, relations, target=False)
 
 
 def build_banks(
@@ -230,6 +239,7 @@ def build_banks(
     anchor="dispersion",
     aperture_re=None,
     target_aperture_re=None,
+    relations=None,
 ):
     """Target, source-cell and anchor arrays concatenated over core-scale blocks.
 
@@ -240,8 +250,15 @@ def build_banks(
     averaged over states with a finite anchor). The aperture defaults to
     APERTURE_RE half-light radii. With target_aperture_re, target banks also
     hold their own aperture dispersions for TDCOSMO-like target kinematics.
+    ``relations`` replaces the package's prescribed stellar--halo and
+    concentration relations.
     """
-    aperture_re = APERTURE_RE if aperture_re is None else aperture_re
+    options = dict(
+        anchor=anchor,
+        aperture_re=APERTURE_RE if aperture_re is None else aperture_re,
+        target_aperture_re=target_aperture_re,
+        relations=PhysicalRelations() if relations is None else relations,
+    )
     designs = [
         (
             "target",
@@ -261,16 +278,7 @@ def build_banks(
     designs += [("source", dict(foreground[m], radius_arcsec=r)) for m, r in cells]
     designs += [("anchor", foreground[m]) for m in masses]
     jobs = [
-        (
-            grid_name,
-            q,
-            normalization,
-            kind,
-            kwargs,
-            anchor,
-            aperture_re,
-            target_aperture_re,
-        )
+        (grid_name, q, normalization, kind, kwargs, options)
         for q in core_scales
         for kind, kwargs in designs
     ]
