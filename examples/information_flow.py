@@ -29,10 +29,19 @@ SN residual, a dynamical anchor, or both:
 
 * SN: Gaussian response (default 0.15 mag, the TRAIN20 width near z=1.2),
   complete delivery, stellar microlensing variance, shared SN zero point;
-* anchor: ln M_3D(<4/3 Re), the mass Wolf et al. (2010) show a dispersion
-  measurement fixes nearly independently of anisotropy, with a fractional
-  error and a shared calibration offset. A broad finite core adds little 3D
-  mass inside Re, so this anchor reads the stars and halo, not the sheet.
+* anchor (default "dispersion"): ln sigma_ap, the luminosity-weighted
+  line-of-sight dispersion inside Re from the spherical Jeans equation
+  (``ilsn.dynamics``), with a fractional error, a shared calibration offset,
+  per-galaxy anisotropy scatter as extra width and the uncertain mean
+  anisotropy added to the offset. "wolf" instead uses ln M_3D(<4/3 Re), the
+  mass Wolf et al. (2010) show a global dispersion fixes nearly independently
+  of anisotropy, with fractional mass errors. A broad finite core adds little
+  mass inside Re, so either anchor reads the stars and halo, not the sheet.
+
+The mean-only SN+anchor case uses only the population means of brightness and
+anchor in each cell, which is what per-cell stacked spectra of the same
+foregrounds measure; a low per-object signal-to-noise enters as a larger
+anchor error.
 
 Both use only states admitted for a single-image SN at that radius, so the
 anchor-only control differs from the joint case only by the SN brightness;
@@ -71,6 +80,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.special import logsumexp
 
+from ilsn.dynamics import aperture_dispersion
 from ilsn.lens_bank import build_lens_bank
 from ilsn.lens_model import CompositeProfile, FiniteCore, GalaxyProfile
 from ilsn.mass_grid import SCORE_NAMES, LensDesign, MassGrid, physical_state_parameters
@@ -110,6 +120,16 @@ FIDUCIAL = dict(
 SAMPLE_SIZES = (48, 192, 768, 3000)
 FLOOR_N = 10**6  # stands in for an unlimited sample of that source class
 ADMISSION = ("physical_valid", "single_image", "geometry_valid", "projection_valid")
+# Dispersion anchor: luminosity-weighted sigma inside APERTURE_RE * Re for
+# constant anisotropy, with a population mean, a per-galaxy scatter and an
+# uncertain population mean (early-type galaxies: beta ~ 0-0.3).
+APERTURE_RE = 1.0
+ANISOTROPY = dict(mean=0.1, scatter=0.15, mean_sd=0.1)
+# Fractional anchor errors and calibration offset: mass for "wolf", dispersion
+# for "dispersion" (sigma errors are half the implied mass errors).
+ANCHOR_DEFAULTS = dict(
+    wolf=((0.1, 0.15, 0.3), 0.05), dispersion=((0.05, 0.1, 0.2), 0.025)
+)
 
 
 def core_grid(grid_name, q, normalization):
@@ -118,11 +138,9 @@ def core_grid(grid_name, q, normalization):
     return MassGrid.primary(**GRIDS[grid_name], q_nodes=(q,), reference_q=reference_q)
 
 
-def wolf_mass(design, grid):
-    """ln M_3D(<4/3 Re) in Msun for every state of a one-object design."""
+def _state_profiles(design, grid):
+    """Stars, halo and cores of every state of a one-object design."""
     p = physical_state_parameters(design, grid)
-    radius = 4 / 3 * p["re_arcsec"][0] * p["kpc_per_arcsec"][0]
-    out = np.full(len(grid), np.nan)
     for k in range(len(grid)):
         base = GalaxyProfile(
             design.z_lens[0],
@@ -140,9 +158,33 @@ def wolf_mass(design, grid):
                 p["core_radii_kpc"][0, k], p["sigma_core_components_msun_kpc2"][0, k]
             )
         )
-        mass = float(CompositeProfile(base, cores).enclosed_mass_3d_msun(radius))
+        yield CompositeProfile(base, cores)
+
+
+def wolf_mass(design, grid):
+    """ln M_3D(<4/3 Re) in Msun for every state of a one-object design."""
+    out = np.full(len(grid), np.nan)
+    for k, profile in enumerate(_state_profiles(design, grid)):
+        mass = float(profile.enclosed_mass_3d_msun(4 / 3 * profile.base.re_kpc))
         out[k] = np.log(mass) if mass > 0 else np.nan
     return out
+
+
+def dispersion_anchor(design, grid, aperture_re):
+    """ln sigma_ap (km/s) at the mean anisotropy and d ln sigma_ap / d beta.
+
+    The aperture radius is aperture_re times the half-light radius.
+    """
+    scatter = ANISOTROPY["scatter"]
+    beta = ANISOTROPY["mean"] + scatter * np.array([-1.0, 0.0, 1.0])
+    value, slope = (np.full(len(grid), np.nan) for _ in range(2))
+    for k, profile in enumerate(_state_profiles(design, grid)):
+        aperture = aperture_re * profile.base.re_kpc
+        ln_sigma = np.log(aperture_dispersion(profile, aperture, beta))
+        if np.all(np.isfinite(ln_sigma)):
+            value[k] = ln_sigma[1]
+            slope[k] = (ln_sigma[2] - ln_sigma[0]) / (2 * scatter)
+    return value, slope
 
 
 def source_size(log_mass):
@@ -152,22 +194,40 @@ def source_size(log_mass):
 
 
 def _bank_job(job):
-    grid_name, q, normalization, kind, design_kwargs = job
+    grid_name, q, normalization, kind, design_kwargs, anchor, aperture_re = job
     grid = core_grid(grid_name, q, normalization)
     design = LensDesign(**design_kwargs)
     if kind == "target":
         return build_lens_bank(design, grid, source=False)
     if kind == "anchor":
-        return dict(ln_wolf_mass=wolf_mass(design, grid)[None, :])
+        if anchor == "wolf":
+            value, slope = wolf_mass(design, grid), np.zeros(len(grid))
+        else:
+            value, slope = dispersion_anchor(design, grid, aperture_re)
+        return dict(ln_anchor=value[None, :], anchor_slope=slope[None, :])
     return build_lens_bank(design, grid, target=False)
 
 
-def build_banks(grid_name, core_scales, normalization, radii, masses, processes=4):
+def build_banks(
+    grid_name,
+    core_scales,
+    normalization,
+    radii,
+    masses,
+    processes=4,
+    anchor="dispersion",
+    aperture_re=None,
+):
     """Target, source-cell and anchor arrays concatenated over core-scale blocks.
 
     Source cells are every foreground mass (with its assigned size) at every
-    SN radius; anchors depend on the foreground mass only.
+    SN radius; anchors depend on the foreground mass only. For the dispersion
+    anchor, per-galaxy anisotropy scatter becomes an extra per-state width and
+    the uncertain population-mean anisotropy a shared offset (its slope
+    averaged over states with a finite anchor). The aperture defaults to
+    APERTURE_RE half-light radii.
     """
+    aperture_re = APERTURE_RE if aperture_re is None else aperture_re
     designs = [
         (
             "target",
@@ -187,7 +247,7 @@ def build_banks(grid_name, core_scales, normalization, radii, masses, processes=
     designs += [("source", dict(foreground[m], radius_arcsec=r)) for m, r in cells]
     designs += [("anchor", foreground[m]) for m in masses]
     jobs = [
-        (grid_name, q, normalization, kind, kwargs)
+        (grid_name, q, normalization, kind, kwargs, anchor, aperture_re)
         for q in core_scales
         for kind, kwargs in designs
     ]
@@ -209,15 +269,31 @@ def build_banks(grid_name, core_scales, normalization, radii, masses, processes=
     if fiducial.sum() != 1:
         raise ValueError("Grid must contain exactly one fiducial state")
     n, c = len(TARGETS["re_arcsec"]), len(cells)
-    anchors = dict(zip(masses, (b["ln_wolf_mass"][0] for b in banks[n + c :])))
+    anchors = dict(zip(masses, banks[n + c :]))
+    slopes = []
+    for b in anchors.values():
+        finite = np.isfinite(b["ln_anchor"][0])
+        slopes.append(base[finite] @ b["anchor_slope"][0, finite] / base[finite].sum())
     return dict(
         population=MassPopulation(base, scores),
         fiducial=int(np.flatnonzero(fiducial)[0]),
         targets=banks[:n],
         cells=[
-            dict(log_mass=m, radius=r, bank=b, anchor=anchors[m])
+            dict(
+                log_mass=m,
+                radius=r,
+                bank=b,
+                anchor=anchors[m]["ln_anchor"][0],
+                anchor_width=abs(anchors[m]["anchor_slope"][0]) * ANISOTROPY["scatter"],
+            )
             for (m, r), b in zip(cells, banks[n : n + c])
         ],
+        anchor=anchor,
+        anchor_offset_sd=(
+            float(abs(np.mean(slopes)) * ANISOTROPY["mean_sd"])
+            if anchor == "dispersion"
+            else 0.0
+        ),
     )
 
 
@@ -383,8 +459,9 @@ def analyse(
     )
     g = np.mean([t["gradient"] for t in targets], axis=0)
     p0 = np.asarray(PRIORS[prior], float)
+    anchor_offset = np.hypot(anchor_zero_point, banks["anchor_offset_sd"])
     precision = np.diag(
-        np.concatenate((p0**-2, [sn_zero_point**-2, anchor_zero_point**-2]))
+        np.concatenate((p0**-2, [sn_zero_point**-2, anchor_offset**-2]))
     )
     contribution = (g * p0) ** 2
     budget = dict(zip(SCORE_NAMES, contribution / contribution.sum()))
@@ -402,13 +479,13 @@ def analyse(
         width = np.sqrt(sn_sigma**2 + micro_scale**2 * bank["kappa_star"][0, admitted])
         logw, scores = logw_all[admitted], population.scores[admitted]
         wa = np.exp(logw - logsumexp(logw))
-        anchor = cell["anchor"][admitted]
+        anchor, spread = cell["anchor"][admitted], cell["anchor_width"][admitted]
         sn = (shift, width)
         fishers["mixture", "SN", index, None], m1 = source_fisher(logw, scores, sn=sn)
         fishers["mean", "SN", index, None] = moment_fisher(logw, scores, sn=sn)
         mass = [m1]
         for err in anchor_errors:
-            a = (anchor, np.full(anchor.shape, err))
+            a = (anchor, np.hypot(err, spread))
             for kind, data in (
                 ("anchor", dict(anchor=a)),
                 ("SN+anchor", dict(sn=sn, anchor=a)),
@@ -438,10 +515,10 @@ def analyse(
         # dynamics and SN brightness come from different objects.
         if ("mean", "survey", cell["log_mass"], anchor_errors[0]) not in fishers:
             physical = bank["physical_valid"][0] & np.isfinite(cell["anchor"])
-            a = cell["anchor"][physical]
+            a, a_spread = cell["anchor"][physical], cell["anchor_width"][physical]
             data = (logw_all[physical], population.scores[physical])
             for err in anchor_errors:
-                a_err = (a, np.full(a.shape, err))
+                a_err = (a, np.hypot(err, a_spread))
                 key = ("survey", cell["log_mass"], err)
                 fishers[("mixture",) + key] = source_fisher(*data, anchor=a_err)[0]
                 fishers[("mean",) + key] = moment_fisher(*data, anchor=a_err)
@@ -505,6 +582,7 @@ def analyse(
         prior_shared_sd_with_contrast=shared_sd(
             g, np.zeros_like(precision), precision, contrast_sd
         ),
+        anchor_offset_sd=float(anchor_offset),
         individual_state_sd=individual,
         sources=per_source,
         rows=rows,
@@ -580,14 +658,21 @@ def main():
     parser.add_argument("--sn-sigma", type=float, default=0.15)
     parser.add_argument("--micro-scale", type=float, default=0.2)
     parser.add_argument(
-        "--anchor-errors", type=float, nargs="*", default=[0.1, 0.15, 0.3]
+        "--anchor", choices=sorted(ANCHOR_DEFAULTS), default="dispersion"
     )
+    parser.add_argument("--anchor-errors", type=float, nargs="*", default=None)
+    parser.add_argument("--aperture-re", type=float, default=APERTURE_RE)
     parser.add_argument("--prior", choices=sorted(PRIORS), default="isotropic")
     parser.add_argument("--sn-zero-point", type=float, default=0.01)
-    parser.add_argument("--anchor-zero-point", type=float, default=0.05)
+    parser.add_argument("--anchor-zero-point", type=float, default=None)
     parser.add_argument("--contrast-sd", type=float, default=0.1)
     parser.add_argument("--processes", type=int, default=4)
     args = parser.parse_args()
+    errors, offset = ANCHOR_DEFAULTS[args.anchor]
+    if args.anchor_errors is None:
+        args.anchor_errors = list(errors)
+    if args.anchor_zero_point is None:
+        args.anchor_zero_point = offset
     banks = build_banks(
         args.grid,
         args.core_scales,
@@ -595,6 +680,8 @@ def main():
         args.radii,
         args.source_masses,
         args.processes,
+        args.anchor,
+        args.aperture_re,
     )
     result = analyse(
         banks,
@@ -621,7 +708,8 @@ def main():
         writer.writerows(result["rows"])
     title = (
         f"{args.grid} grid, q={args.core_scales} ({args.normalization}), "
-        f"imaging {args.theta_error:.0%}/{args.xi_error}, {args.prior} prior"
+        f"imaging {args.theta_error:.0%}/{args.xi_error}, {args.prior} prior, "
+        f"{args.anchor} anchor"
     )
     plot(result, args.output_dir, title)
 
@@ -630,7 +718,8 @@ def main():
         f"prior shared SD {result['prior_shared_sd']:.4f} (linear), "
         f"{result['prior_shared_sd_nonlinear']:.4f} (over prior tilts); "
         f"mean per-lens state SD "
-        f"{result['individual_state_sd']:.4f}"
+        f"{result['individual_state_sd']:.4f}; anchor offset SD "
+        f"{result['anchor_offset_sd']:.4f}"
     )
     for name in SCORE_NAMES:
         print(

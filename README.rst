@@ -64,8 +64,8 @@ Run each with ``PYTHONPATH=. python examples/<name>.py``. All inputs are bundled
   angle in Einstein radii, for three radial families, with and without inner
   imaging.
 * ``information_flow.py``: a linearized budget of which population directions
-  set the TD-lens s_E hypermean, and how much SN brightness, a dynamical mass
-  anchor on the same foregrounds, or both remove.
+  set the TD-lens s_E hypermean, and how much SN brightness, a velocity
+  dispersion of the same foregrounds (individual or stacked), or both remove.
 
 See `input data <data/README.rst>`_ for the simulation setup and numerical rule.
 
@@ -78,6 +78,8 @@ Scientific interface
 ``lens_model``, ``geometry``, ``mass_grid`` and ``lens_bank``
     Stars, dark halos, finite cores and mass redistribution; physical mass
     grids, single-image geometry and source/target predictions.
+``dynamics``
+    Spherical Jeans aperture velocity dispersions of the same mass models.
 ``observation`` and ``likelihood``
     Paired line-of-sight environments, dust, microlensing, source selection,
     shared errors and mock inner imaging.
