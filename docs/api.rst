@@ -19,6 +19,12 @@ Lens models
 .. automodule:: ilsn.lens_model
    :members:
 
+Dynamics
+--------
+
+.. automodule:: ilsn.dynamics
+   :members:
+
 Source geometry
 ---------------
 

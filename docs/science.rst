@@ -58,9 +58,13 @@ admission. For one delivered source,
 .. math::
 
    L_i(\eta,\psi) =
-   \frac{\sum_{k,l} w_k(\eta)a_{ikl}
+   \frac{\sum_{k,l} w_k(\eta)F_{ik}a_{ikl}
      S_\psi(d_{ikl},z_i)K_\psi(y_i\mid d_{ikl},z_i)}
    {\sum_{k,l} w_k(\eta)a_{ikl}S_\psi(d_{ikl},z_i)}.
+
+F is an optional likelihood of independent foreground data, such as a
+measured velocity dispersion, for each mass state (one by default). It enters
+the numerator only: selection acts on the SN, not on the foreground data.
 
 The shared prior is integrated after the catalogue product:
 
@@ -157,7 +161,22 @@ uses the same score definition.
 and scatters; reference masses and radii are simulation covariates.
 ``td_selection`` approximates a TD-like conditional sample with circular
 caustic area and a default 150--350 km/s SIS velocity proxy. Calibrated survey
-selection and measured dynamics require their own inputs. The mock inner
+selection and measured dynamics require their own inputs.
+
+``aperture_dispersion`` predicts the luminosity-weighted line-of-sight
+dispersion inside a circular aperture from the spherical Jeans equation with
+constant anisotropy beta. The Sersic light (without the M/L gradient) traces
+the full potential of stars, halo and signed cores:
+
+.. math::
+
+   \nu\sigma_r^2(r)=r^{-2\beta}\int_r^\infty s^{2\beta}\nu(s)
+       \frac{GM(s)}{s^2}\,ds,\qquad
+   \sigma_{\rm ap}^2=\frac{\int\nu\sigma_r^2(r-s)
+       [1-\beta(r-s)(2r+s)/(3r^2)]\,r\,dr}{\int\nu(r-s)\,r\,dr},
+
+with s=sqrt(max(r^2-R^2, 0)) for aperture radius R. Seeing, slit geometry and
+rotation are not modelled. The mock inner
 likelihood is a compressed Gaussian in theta_E/xi_E with fixed observed
 uncertainties; ``TargetSample`` also accepts pixel-imaging or dynamics
 likelihoods.
