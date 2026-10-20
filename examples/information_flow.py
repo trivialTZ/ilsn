@@ -51,9 +51,10 @@ Run from the source directory after installing its dependencies::
     PYTHONPATH=. python examples/information_flow.py --core-scales 5 10 20 --normalization ring
 
 The 2,700-state standard grid with one core scale takes about two minutes on
-four processes; each extra core scale or the 4,860-state primary grid adds
-proportionally. The closed forms reproduce central finite differences of
-``TargetSample.moments`` and of the mixture log density.
+four processes; each extra core scale, the 4,860-state primary grid or the
+9,180-state fine grid adds proportionally. The closed forms reproduce
+central finite differences of ``TargetSample.moments`` and of the mixture
+log density.
 """
 
 import argparse
@@ -74,8 +75,16 @@ from ilsn.lens_model import CompositeProfile, FiniteCore, GalaxyProfile
 from ilsn.mass_grid import SCORE_NAMES, LensDesign, MassGrid, physical_state_parameters
 from ilsn.observation import imaging_log_likelihood, td_selection
 from ilsn.population import MassPopulation, TargetSample
+from ilsn.sampling import gaussian_nodes
 
-GRIDS = dict(standard=dict(eta_nodes=(-0.2, -0.1, 0.0, 0.1, 0.2)), primary=dict())
+# Roman-quality target imaging resolves the core-amplitude axis: the target
+# prior shared SD moves 0.022 -> 0.0275 -> 0.031 from 5 to 9 to 17 nodes and
+# then stays put when halo nodes are refined, so use "fine" for headline numbers.
+GRIDS = dict(
+    standard=dict(eta_nodes=tuple(np.linspace(-0.2, 0.2, 5))),
+    primary=dict(),
+    fine=dict(eta_nodes=tuple(np.linspace(-0.2, 0.2, 17))),
+)
 PRIORS = dict(
     isotropic=(0.7,) * 8,
     # SHMR ~0.1 dex, concentration ~0.05 dex, IMF ~0.1 dex; broad sheet.
@@ -246,9 +255,22 @@ def target_sensitivity(population, banks, fiducial, theta_error, xi_error, eta0)
                 mean=float(mean),
                 state_sd=float(np.sqrt(post @ (s - mean) ** 2)),
                 gradient=(post * (s - mean)) @ centered,
+                sample=sample,
             )
         )
     return rows
+
+
+def prior_spread(population, targets, prior_sd, n=1024, seed=0):
+    """Nonlinear prior SD of the catalogue-mean endpoint over Gaussian tilts."""
+    nodes, weights = gaussian_nodes(
+        np.zeros(len(prior_sd)), np.diag(prior_sd**2), n, seed
+    )
+    mean = np.mean(
+        [t["sample"].moments(population, nodes)["mean"][:, 0] for t in targets], axis=0
+    )
+    center = weights @ mean
+    return float(np.sqrt(weights @ (mean - center) ** 2))
 
 
 def _normal_log(x, center, width):
@@ -468,12 +490,17 @@ def analyse(
                     )
     return dict(
         targets=[
-            {k: (v.tolist() if isinstance(v, np.ndarray) else v) for k, v in t.items()}
+            {
+                k: (v.tolist() if isinstance(v, np.ndarray) else v)
+                for k, v in t.items()
+                if k != "sample"
+            }
             for t in targets
         ],
         gradient=dict(zip(SCORE_NAMES, g.tolist())),
         budget=budget,
         prior_shared_sd=prior_shared,
+        prior_shared_sd_nonlinear=prior_spread(population, targets, p0),
         prior_shared_sd_with_contrast=shared_sd(
             g, np.zeros_like(precision), precision, contrast_sd
         ),
@@ -599,7 +626,9 @@ def main():
 
     print(f"{result['states']} states; {title}")
     print(
-        f"prior shared SD {result['prior_shared_sd']:.4f}; mean per-lens state SD "
+        f"prior shared SD {result['prior_shared_sd']:.4f} (linear), "
+        f"{result['prior_shared_sd_nonlinear']:.4f} (over prior tilts); "
+        f"mean per-lens state SD "
         f"{result['individual_state_sd']:.4f}"
     )
     for name in SCORE_NAMES:
