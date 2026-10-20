@@ -87,6 +87,34 @@ def test_selected_density_normalizes_and_uses_each_draw_selection():
     np.testing.assert_allclose(trapezoid(density, grid), 1.0, atol=1e-10)
 
 
+def test_foreground_data_weight_numerator_but_not_selection():
+    cal = response(
+        [[-0.3, 0.2], [-0.1, 0.4]],
+        0.1**2,
+        np.array([[[0.9, 0.1]], [[0.2, 0.8]]]),
+        [0.3, 0.7],
+    )
+    foreground = np.log([[0.6, 0.1]])
+    sample = SourceSample(
+        [0.15], [1.0], [[-1.0, 1.0]], foreground_log_likelihood=foreground
+    )
+    pop = MassPopulation([0.25, 0.75], [[0.0], [0.0]])
+    actual = SourceLikelihood(sample, cal).log_likelihood(pop, [[0.0]])[0]
+    selected = np.array([[0.25 * 0.9, 0.75 * 0.1], [0.25 * 0.2, 0.75 * 0.8]])
+    kernel = norm.pdf(0.15, np.array([[-0.3, 0.2], [-0.1, 0.4]]), 0.1)
+    expected = np.log(
+        np.array([0.3, 0.7])
+        @ ((selected * kernel * np.exp(foreground)).sum(1) / selected.sum(1))
+    )
+    np.testing.assert_allclose(actual, expected, atol=1e-14)
+    copy = sample.with_residuals([0.15])
+    np.testing.assert_array_equal(copy.foreground_log_likelihood, foreground)
+    with pytest.raises(ValueError, match="broadcast"):
+        SourceSample([0.15], [1.0], [[-1.0, 1.0]], foreground_log_likelihood=[0, 0, 0])
+    with pytest.raises(ValueError, match="below"):
+        SourceSample([0.15], [1.0], [[-1.0, 1.0]], foreground_log_likelihood=np.inf)
+
+
 def test_dust_changes_delivery_and_mean_but_extra_scatter_only_variance():
     cal = response([[-1.0, 1.0]], 0.1**2, [0.8, 0.2])
     sample = SourceSample(

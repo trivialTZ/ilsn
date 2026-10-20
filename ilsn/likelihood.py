@@ -29,6 +29,11 @@ class SourceSample:
     :param extra_variance_mag2: Additional *post-delivery* variance, broadcast
         to photon shifts. The calibrated SN scatter is already included.
     :param dust_template_mag: Photon attenuation per unit shared dust amplitude.
+    :param foreground_log_likelihood: Log likelihood of independent data on
+        each source's foreground at every mass state, such as a stellar
+        dispersion, broadcast to (source, state). It multiplies the selected
+        SN density but not its normalization, since selection acts on SN
+        delivery alone. The default zero adds no foreground data.
     """
 
     def __init__(
@@ -39,6 +44,7 @@ class SourceSample:
         component_weight=1.0,
         extra_variance_mag2=0.0,
         dust_template_mag=0.0,
+        foreground_log_likelihood=0.0,
     ):
         self.residual_mag = np.asarray(residual_mag, dtype=float)
         self.redshift = np.asarray(redshift, dtype=float)
@@ -91,6 +97,16 @@ class SourceSample:
             raise ValueError(
                 "Supported states need finite shifts/templates and nonnegative extra variance."
             )
+        foreground = np.asarray(foreground_log_likelihood, dtype=float)
+        try:
+            foreground = np.broadcast_to(foreground, shift.shape[:2])
+        except ValueError:
+            raise ValueError(
+                "Foreground log likelihoods must broadcast to (source, state)."
+            ) from None
+        if np.any(np.isnan(foreground) | np.isposinf(foreground)):
+            raise ValueError("Foreground log likelihoods must be below +inf.")
+        self.foreground_log_likelihood = foreground
 
     @property
     def n_states(self):
@@ -106,6 +122,7 @@ class SourceSample:
             self.component_weight,
             self.extra_variance_mag2,
             self.dust_template_mag,
+            self.foreground_log_likelihood,
         )
 
 
@@ -181,7 +198,8 @@ class SourceLikelihood:
     """Direct log-space integration of a selected ilSN survey.
 
     At each common response node psi, object i contributes
-    ``sum(w * component_weight * S * K) / sum(w * component_weight * S)``.
+    ``sum(w * F * component_weight * S * K) / sum(w * component_weight * S)``,
+    where F is the sample's foreground data likelihood at each state.
     The full product over objects is formed before integrating psi. Both
     delivery S and selected residual density K use the same photon shift.
 
@@ -259,6 +277,7 @@ class SourceLikelihood:
             normalization = logsumexp(logw + logs[None, :], axis=1)
             if not np.isfinite(normalization).all():
                 raise ValueError("A source has no deliverable support at this node.")
+            logsk = logsk + self.sample.foreground_log_likelihood[source]
             result += logsumexp(logw + logsk[None, :], axis=1) - normalization
         return result
 
