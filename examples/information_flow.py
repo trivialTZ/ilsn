@@ -49,6 +49,7 @@ Run from the source directory after installing its dependencies::
 
     PYTHONPATH=. python examples/information_flow.py --output-dir outputs/information_flow
     PYTHONPATH=. python examples/information_flow.py --core-scales 5 10 20 --normalization ring
+    PYTHONPATH=. python examples/information_flow.py --grid fine
 
 The 2,700-state standard grid with one core scale takes about two minutes on
 four processes; each extra core scale, the 4,860-state primary grid or the
@@ -551,7 +552,7 @@ def plot(result, output_dir, title):
     )
     axes[1].set_xscale("log")
     axes[1].set_xlabel("number of sources (all cells)")
-    axes[1].set_ylabel("shared SD of catalogue-mean $s_E$")
+    axes[1].set_ylabel("shared SD of catalogue-mean $s_E$ (mean-only)")
     axes[1].legend(frameon=False)
     fig.suptitle(title, fontsize=10)
     fig.tight_layout()
