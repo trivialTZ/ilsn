@@ -54,11 +54,17 @@ by ring amplitude (q_ref=q, central surface density eta M_ref/(pi Re^2) at
 every q). Delivery selection, dust and line-of-sight terms are omitted, so
 this is a design comparison at one population point, not a survey forecast.
 
+Targets have compressed imaging and, with ``--target-dispersion-error``, their
+own aperture dispersion (TDCOSMO-like kinematics). At fixed imaging a
+mass-sheet transformation scales H0 with s_E, so a shared SD divided by the
+catalogue-mean s_E is the fractional H0 uncertainty it implies.
+
 Run from the source directory after installing its dependencies::
 
     PYTHONPATH=. python examples/information_flow.py --output-dir outputs/information_flow
     PYTHONPATH=. python examples/information_flow.py --core-scales 5 10 20 --normalization ring
     PYTHONPATH=. python examples/information_flow.py --grid fine
+    PYTHONPATH=. python examples/information_flow.py --target-dispersion-error 0.05
 
 The 2,700-state standard grid with one core scale takes about two minutes on
 four processes; each extra core scale, the 4,860-state primary grid or the
@@ -194,11 +200,17 @@ def source_size(log_mass):
 
 
 def _bank_job(job):
-    grid_name, q, normalization, kind, design_kwargs, anchor, aperture_re = job
+    grid_name, q, normalization, kind, design_kwargs, anchor, aperture_re, target_re = (
+        job
+    )
     grid = core_grid(grid_name, q, normalization)
     design = LensDesign(**design_kwargs)
     if kind == "target":
-        return build_lens_bank(design, grid, source=False)
+        bank = build_lens_bank(design, grid, source=False)
+        if target_re is not None:
+            value, slope = dispersion_anchor(design, grid, target_re)
+            bank.update(ln_dispersion=value[None, :], dispersion_slope=slope[None, :])
+        return bank
     if kind == "anchor":
         if anchor == "wolf":
             value, slope = wolf_mass(design, grid), np.zeros(len(grid))
@@ -217,6 +229,7 @@ def build_banks(
     processes=4,
     anchor="dispersion",
     aperture_re=None,
+    target_aperture_re=None,
 ):
     """Target, source-cell and anchor arrays concatenated over core-scale blocks.
 
@@ -225,7 +238,8 @@ def build_banks(
     anchor, per-galaxy anisotropy scatter becomes an extra per-state width and
     the uncertain population-mean anisotropy a shared offset (its slope
     averaged over states with a finite anchor). The aperture defaults to
-    APERTURE_RE half-light radii.
+    APERTURE_RE half-light radii. With target_aperture_re, target banks also
+    hold their own aperture dispersions for TDCOSMO-like target kinematics.
     """
     aperture_re = APERTURE_RE if aperture_re is None else aperture_re
     designs = [
@@ -247,7 +261,16 @@ def build_banks(
     designs += [("source", dict(foreground[m], radius_arcsec=r)) for m, r in cells]
     designs += [("anchor", foreground[m]) for m in masses]
     jobs = [
-        (grid_name, q, normalization, kind, kwargs, anchor, aperture_re)
+        (
+            grid_name,
+            q,
+            normalization,
+            kind,
+            kwargs,
+            anchor,
+            aperture_re,
+            target_aperture_re,
+        )
         for q in core_scales
         for kind, kwargs in designs
     ]
@@ -297,8 +320,15 @@ def build_banks(
     )
 
 
-def target_sensitivity(population, banks, fiducial, theta_error, xi_error, eta0):
-    """Per-target E[s_E], its state SD and gradient g_j = Cov_j(s_E, T)."""
+def target_sensitivity(
+    population, banks, fiducial, theta_error, xi_error, eta0, dispersion_error=None
+):
+    """Per-target E[s_E], its state SD and gradient g_j = Cov_j(s_E, T).
+
+    With dispersion_error, each target also has its own aperture dispersion,
+    observed at the fiducial state with that fractional error plus the
+    per-galaxy anisotropy scatter.
+    """
     logw = population.log_probabilities(eta0)[0]
     rows = []
     for bank in banks:
@@ -315,6 +345,15 @@ def target_sensitivity(population, banks, fiducial, theta_error, xi_error, eta0)
         logl = imaging_log_likelihood(
             theta, xi, [ot], [ox], [theta_error * ot], [xi_error]
         )
+        if dispersion_error is not None:
+            ln_sigma = bank["ln_dispersion"]
+            valid = valid & np.isfinite(ln_sigma)
+            width = np.hypot(
+                dispersion_error,
+                np.nan_to_num(bank["dispersion_slope"]) * ANISOTROPY["scatter"],
+            )
+            residual = np.nan_to_num(ln_sigma) - ln_sigma[0, fiducial]
+            logl = logl - 0.5 * (residual / width) ** 2 - np.log(width)
         sample = TargetSample(bank["s_E"], selection, logl, valid)
         with np.errstate(divide="ignore"):
             joint = logw + np.log(sample.selection[0]) + sample.log_likelihood[0]
@@ -451,11 +490,18 @@ def analyse(
     sn_zero_point,
     anchor_zero_point,
     contrast_sd,
+    target_dispersion_error=None,
 ):
     population = banks["population"]
     eta0 = np.zeros(len(SCORE_NAMES))
     targets = target_sensitivity(
-        population, banks["targets"], banks["fiducial"], theta_error, xi_error, eta0
+        population,
+        banks["targets"],
+        banks["fiducial"],
+        theta_error,
+        xi_error,
+        eta0,
+        target_dispersion_error,
     )
     g = np.mean([t["gradient"] for t in targets], axis=0)
     p0 = np.asarray(PRIORS[prior], float)
@@ -583,6 +629,7 @@ def analyse(
             g, np.zeros_like(precision), precision, contrast_sd
         ),
         anchor_offset_sd=float(anchor_offset),
+        catalogue_mean_s_E=float(np.mean([t["mean"] for t in targets])),
         individual_state_sd=individual,
         sources=per_source,
         rows=rows,
@@ -662,6 +709,8 @@ def main():
     )
     parser.add_argument("--anchor-errors", type=float, nargs="*", default=None)
     parser.add_argument("--aperture-re", type=float, default=APERTURE_RE)
+    parser.add_argument("--target-dispersion-error", type=float, default=None)
+    parser.add_argument("--target-aperture-re", type=float, default=1.0)
     parser.add_argument("--prior", choices=sorted(PRIORS), default="isotropic")
     parser.add_argument("--sn-zero-point", type=float, default=0.01)
     parser.add_argument("--anchor-zero-point", type=float, default=None)
@@ -682,6 +731,7 @@ def main():
         args.processes,
         args.anchor,
         args.aperture_re,
+        None if args.target_dispersion_error is None else args.target_aperture_re,
     )
     result = analyse(
         banks,
@@ -695,6 +745,7 @@ def main():
         sn_zero_point=args.sn_zero_point,
         anchor_zero_point=args.anchor_zero_point,
         contrast_sd=args.contrast_sd,
+        target_dispersion_error=args.target_dispersion_error,
     )
     result["settings"] = {
         k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()
@@ -710,6 +761,11 @@ def main():
         f"{args.grid} grid, q={args.core_scales} ({args.normalization}), "
         f"imaging {args.theta_error:.0%}/{args.xi_error}, {args.prior} prior, "
         f"{args.anchor} anchor"
+        + (
+            ""
+            if args.target_dispersion_error is None
+            else f", target sigma {args.target_dispersion_error:.0%}"
+        )
     )
     plot(result, args.output_dir, title)
 
@@ -720,6 +776,11 @@ def main():
         f"mean per-lens state SD "
         f"{result['individual_state_sd']:.4f}; anchor offset SD "
         f"{result['anchor_offset_sd']:.4f}"
+    )
+    print(
+        f"catalogue-mean s_E {result['catalogue_mean_s_E']:.3f}; at fixed imaging a "
+        "mass-sheet transformation scales H0 with s_E, so SD / mean s_E is the "
+        "fractional H0 uncertainty"
     )
     for name in SCORE_NAMES:
         print(
