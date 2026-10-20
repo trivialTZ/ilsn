@@ -60,7 +60,12 @@ def test_aperture_matches_direct_projection(galaxy, beta):
     nodes = np.geomspace(1e-4 * re, 200 * re, 241)
     pressure = [
         r ** (-2 * beta)
-        * quad(lambda s: s ** (2 * beta) * nu_g_m(s), r, 300 * re, limit=200)[0]
+        * quad(
+            lambda u: np.exp((2 * beta + 1) * u) * nu_g_m(np.exp(u)),
+            np.log(r),
+            np.log(300 * re),
+            limit=200,
+        )[0]
         for r in nodes
     ]
     log_pressure = CubicSpline(np.log(nodes), np.log(pressure))
@@ -86,6 +91,35 @@ def test_aperture_matches_direct_projection(galaxy, beta):
     np.testing.assert_allclose(
         aperture_dispersion(profile, aperture, beta), expected, rtol=2e-4
     )
+
+
+class _PointMass(GalaxyProfile):
+    """Sersic light orbiting a fixed point mass equal to the stellar mass."""
+
+    def enclosed_mass_3d_msun(self, radius_kpc):
+        return np.full_like(np.asarray(radius_kpc, float), self.stellar_mass_msun)
+
+
+def test_gaussian_light_around_point_mass():
+    """n=0.5 light is a 3D Gaussian: <sigma_los^2> = (2GM/3) sqrt(ln 2 / pi) / Re."""
+    light = _PointMass(
+        z_l=0.3,
+        re_arcsec=1.0,
+        stellar_mass_msun=1e11,
+        halo_mass_msun=1e12,
+        concentration=7.0,
+        light_n=0.5,
+    )
+    re = light.re_kpc
+    expected = np.sqrt(2 * _G * 1e11 / 3 * np.sqrt(np.log(2) / np.pi) / re)
+    sigma = aperture_dispersion(light, 290 * re, [0.0, 0.5])
+    np.testing.assert_allclose(sigma, expected, rtol=1e-6)
+
+
+def test_negative_enclosed_mass_returns_nan(galaxy):
+    re = galaxy.re_kpc
+    profile = CompositeProfile(galaxy, (FiniteCore.from_total_mass(2 * re, -1.5e12),))
+    assert np.isnan(aperture_dispersion(profile, re, 0.0))
 
 
 def test_radial_orbits_raise_central_dispersion(galaxy):

@@ -49,7 +49,8 @@ def aperture_dispersion(
     :param outer: Outermost radius, in units of the largest component Re.
     :param samples: Number of logarithmic radius samples.
     :return: sigma_ap in km/s with the shape of ``anisotropy``; NaN where the
-        integrated sigma^2 is not positive (unphysical signed profiles).
+        radial pressure becomes negative anywhere on the grid (signed
+        profiles with negative enclosed mass) or sigma_ap^2 is not positive.
     """
     galaxy = profile.base if isinstance(profile, CompositeProfile) else profile
     if not isinstance(galaxy, GalaxyProfile):
@@ -82,6 +83,9 @@ def aperture_dispersion(
         # int_r^inf s^(2b) nu G M / s^2 ds over dln s, from the outer edge in.
         integrand = r ** (2 * b - 2) * force
         tail = cumulative_simpson(integrand[::-1], x=-lnr[::-1], initial=0)[::-1]
+        if tail.min() < 0:
+            out[i] = np.nan
+            continue
         nu_sr2_r3 = r ** (3 - 2 * b) * tail
         weight = chord * (1 - b * chord * (2 * r + s) / (3 * r**2))
         out[i] = simpson(nu_sr2_r3 / r * weight, x=lnr) / denominator
