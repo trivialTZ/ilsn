@@ -63,6 +63,9 @@ Run each with ``PYTHONPATH=. python examples/<name>.py``. All inputs are bundled
 * ``radial_information.py``: how one SN's information on s_E changes with its
   angle in Einstein radii, for three radial families, with and without inner
   imaging.
+* ``information_flow.py``: a linearized budget of which population directions
+  set the TD-lens s_E hypermean, and how much SN brightness, a dynamical mass
+  anchor on the same foregrounds, or both remove.
 
 See `input data <data/README.rst>`_ for the simulation setup and numerical rule.
 
